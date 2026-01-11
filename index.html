@@ -1,115 +1,165 @@
 <!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Steganografi di Gambar</title>
-</head>
-<body>
-  <h2>Steganografi LSB</h2>
-  <input type="file" id="imageInput">
-  <textarea id="message" placeholder="Masukkan pesan"></textarea>
-  <button onclick="encodeMessage()">Sisipkan Pesan</button>
-  <button onclick="decodeMessage()">Ekstrak Pesan</button>
-  <label for="#channel">Channel: </label>
-  <select id="channel">
-    <option value="r">R</option>
-    <option value="g">G</option>
-    <option value="b">B</option>
-  </select>
-  <div id="result"></div>
-  <canvas id="canvas" style="display:none;"></canvas>
-  <script>
-    const c = document.getElementById('channel');
-    
-    function encodeMessage() {
-      let file = document.getElementById("imageInput").files[0];
-      let message = document.getElementById("message").value;
-      if (!file || !message) return alert("Pilih gambar dan masukkan pesan!");
-      let reader = new FileReader();
-      reader.onload = function(event) {
-        let img = new Image();
-        img.onload = function() {
-          let canvas = document.getElementById("canvas");
-          let ctx = canvas.getContext("2d");
-          canvas.width = img.width;
-          canvas.height = img.height;
-          ctx.drawImage(img, 0, 0);
-          
-          let imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-          let data = imageData.data;
-          
-          let binary = "";
-          for (let i = 0; i < message.length; i++) {
-            binary += message.charCodeAt(i).toString(2).padStart(8, '0');
-          }
-          binary += "00000000";
-          
-          if (binary.length > canvas.width * canvas.height) alert("Pesan terlalu panjang!");
-          
-          for (let i = 0; i < binary.length; i++) {
-            let bit = parseInt(binary[i]);
-            
-            let idx = i * 4 + (c.value === 'r' ? 0 : c.value === 'g' ? 1 : 2);
-            
-            data[idx] = (data[idx] & 0xFE) | bit;
-          }
-          
-          ctx.putImageData(imageData, 0, 0);
-          let encodedImage = canvas.toDataURL();
-          let a = document.createElement("a");
-          a.href = encodedImage;
-          a.download = "encoded_image.png";
-          a.click();
-        };
-        img.src = event.target.result;
-      };
-      reader.readAsDataURL(file);
-    }
-    
-    function decodeMessage() {
-      let file = document.getElementById("imageInput").files[0];
-      if (!file) return alert("Pilih gambar untuk diekstrak!");
+<html lang="id">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LSB UTF‑16</title>
+    <style>
+      body {
+        background: #0b0f14;
+        color: #9635ff;
+        font-family: monospace;
+        padding: 15px;
+      }
+      textarea, input, select, button {
+        background: #111;
+        color: #9635ff;
+        border: 1px solid #9635ff;
+        padding: 6px;
+        margin-top: 5px;
+      }
+      textarea {
+        width: 100%;
+        height: 90px;
+      }
+      button {
+        cursor: pointer;
+      }
+      pre {
+        background: #050505;
+        padding: 10px;
+        border: 1px solid #9635ff;
+      }
+      canvas {
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <h2>LSB Steganography</h2>
+    <input type="file" id="imageInput"><br><br>
+    <input type="password" id="password" placeholder="Password"><br><br>
+    <textarea id="message" placeholder="Message"></textarea>
+    <label>Channel:</label>
+    <select id="channel">
+      <option value="0">R</option>
+      <option value="1">G</option>
+      <option value="2">B</option>
+    </select>
+    <br><br>
+    <button onclick="encode()">Encode</button>
+    <button onclick="decode()">Decode</button>
+    <h3>Decode Result</h3>
+    <pre id="result"></pre>
+    <canvas id="canvas"></canvas>
+    <script>
+      function xorEncrypt(bytes, password) {
+        const pass = Array.from(password).map(c => c.charCodeAt(0));
+        return bytes.map((b, i) => b ^ pass[i % pass.length]);
+      }
       
-      let reader = new FileReader();
-      reader.onload = function(event) {
-        let img = new Image();
-        img.onload = function() {
-          let canvas = document.getElementById("canvas");
-          let ctx = canvas.getContext("2d");
-          canvas.width = img.width;
-          canvas.height = img.height;
-          ctx.drawImage(img, 0, 0);
-          
-          let imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-          let data = imageData.data;
-          
-          let bits = "";
-          for (let i = 0; i < data.length; i += 4) {
-            let idx = i + (c.value === 'r' ? 0 : c.value === 'g' ? 1 : 2);
+      function utf16ToBytes(str) {
+        const bytes = [];
+        for (let i = 0; i < str.length; i++) {
+          const c = str.charCodeAt(i);
+          bytes.push(c >> 8, c & 0xff);
+        }
+        return bytes;
+      }
+      
+      function bytesToUtf16(bytes) {
+        let out = "";
+        for (let i = 0; i < bytes.length; i += 2) {
+          const c = (bytes[i] << 8) | bytes[i + 1];
+          if (c === 0x0000) break;
+          out += String.fromCharCode(c);
+        }
+        return out;
+      }
+      
+      function encode() {
+        const file = imageInput.files[0];
+        const msg = message.value;
+        const pass = password.value;
+        const ch = +channel.value;
+        
+        if (!file || !msg) return alert("Lengkapi input dulu");
+        
+        const reader = new FileReader();
+        reader.onload = e => {
+          const img = new Image();
+          img.onload = () => {
+            const c = canvas;
+            const ctx = c.getContext("2d");
+            c.width = img.width;
+            c.height = img.height;
+            ctx.drawImage(img, 0, 0);
             
-            let bit = data[idx] & 1;
-            bits += bit;
+            const imgData = ctx.getImageData(0, 0, c.width, c.height);
+            const data = imgData.data;
             
-            if (bits.length % 8 === 0) {
-              let byte = bits.slice(bits.length - 8);
-              if (byte === "00000000") break;
-            }
-          }
-          
-          let result = "";
-          for (let i = 0; i < bits.length; i += 8) {
-            let byte = bits.slice(i, i + 8);
-            if (byte === "00000000") break;
-            result += String.fromCharCode(parseInt(byte, 2));
-          }
-          
-          document.getElementById('result').textContent = result;
+            let bytes = utf16ToBytes(msg);
+            bytes.push(0x00, 0x00);
+            if (pass) bytes = xorEncrypt(bytes, pass);
+            
+            let bits = bytes.flatMap(b =>
+              b.toString(2).padStart(8, "0").split("")
+            );
+            
+            if (bits.length > c.width * c.height) return alert("Pesan kegedean buat gambarnya");
+            
+            bits.forEach((bit, i) => {
+              const idx = i * 4 + ch;
+              data[idx] = (data[idx] & 0xFE) | +bit;
+            });
+            
+            ctx.putImageData(imgData, 0, 0);
+            
+            const a = document.createElement("a");
+            a.href = c.toDataURL("image/png");
+            a.download = "encoded.png";
+            a.click();
+          };
+          img.src = e.target.result;
         };
-        img.src = event.target.result;
-      };
-      reader.readAsDataURL(file);
-    }
-  </script>
-</body>
+        reader.readAsDataURL(file);
+      }
+      
+      function decode() {
+        const file = imageInput.files[0];
+        const pass = password.value;
+        const ch = +channel.value;
+        
+        if (!file) return alert("Butuh gambar");
+        
+        const reader = new FileReader();
+        reader.onload = e => {
+          const img = new Image();
+          img.onload = () => {
+            const c = canvas;
+            const ctx = c.getContext("2d");
+            c.width = img.width;
+            c.height = img.height;
+            ctx.drawImage(img, 0, 0);
+            
+            const data = ctx.getImageData(0, 0, c.width, c.height).data;
+            
+            let bits = "";
+            for (let i = 0; i < data.length; i += 4) {
+              bits += (data[i + ch] & 1);
+              if (bits.length % 16 === 0 && bits.slice(-16) === "0000000000000000") break;
+            }
+            
+            let bytes = [];
+            for (let i = 0; i < bits.length; i += 8) bytes.push(parseInt(bits.slice(i, i + 8), 2));
+            
+            if (pass) bytes = xorEncrypt(bytes, pass);
+            result.textContent = bytesToUtf16(bytes);
+          };
+          img.src = e.target.result;
+        };
+        reader.readAsDataURL(file);
+      }
+    </script>
+  </body>
 </html>
